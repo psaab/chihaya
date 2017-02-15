@@ -4,8 +4,14 @@
 
 package main
 
-import "github.com/chihaya/chihaya"
+import (
+	"github.com/chihaya/chihaya"
+	"github.com/chihaya/chihaya/config"
+	"os"
+)
 
 func main() {
+	config.DefaultConfig.HTTPConfig.TLSKeyPath = os.Getenv("THRIFT_TLS_CL_KEY_PATH")
+	config.DefaultConfig.HTTPConfig.TLSCertPath = os.Getenv("THRIFT_TLS_CL_CERT_PATH")
 	chihaya.Boot()
 }

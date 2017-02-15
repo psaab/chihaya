@@ -7,12 +7,16 @@
 package http
 
 import (
+	"crypto/tls"
+
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
+	"github.com/soheilhy/cmux"
 	"github.com/tylerb/graceful"
 
 	"github.com/chihaya/chihaya/config"
@@ -122,16 +126,48 @@ func (s *Server) Serve() {
 		},
 	}
 
+	l, err := net.Listen("tcp", s.config.HTTPConfig.ListenAddr)
+	if err != nil {
+		panic(err)
+	}
+
+	// Create a cmux.
+	m := cmux.New(l)
+	httpl := m.Match(cmux.HTTP1Fast())
+	go grace.Serve(httpl)
+	if s.config.HTTPConfig.TLSCertPath != "" && s.config.HTTPConfig.TLSKeyPath != "" {
+		tlsl := m.Match(cmux.Any())
+
+		certificate, err := tls.LoadX509KeyPair(s.config.HTTPConfig.TLSCertPath, s.config.HTTPConfig.TLSKeyPath)
+		if err != nil {
+			panic(err)
+		}
+		config := &tls.Config{
+			Certificates: []tls.Certificate{certificate},
+		}
+
+		// Create TLS listener.
+		tlslL := tls.NewListener(tlsl, config)
+
+		// Serve HTTP over TLS.
+		go grace.Serve(tlslL)
+	}
+
 	s.grace = grace
 	grace.SetKeepAlivesEnabled(false)
 	grace.ShutdownInitiated = func() { s.stopping = true }
 
-	if err := grace.ListenAndServe(); err != nil {
-		if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
-			glog.Errorf("Failed to gracefully run HTTP server: %s", err.Error())
-			return
-		}
+	if err := m.Serve(); !strings.Contains(err.Error(), "use of closed network connection") {
+		panic(err)
 	}
+	/*
+		if err := grace.ListenAndServe(); err != nil {
+			if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
+				glog.Errorf("Failed to gracefully run HTTP server: %s", err.Error())
+				return
+			}
+		}
+	*/
 
 	glog.Info("HTTP server shut down cleanly")
 }

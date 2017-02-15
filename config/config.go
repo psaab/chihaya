@@ -95,6 +95,8 @@ type HTTPConfig struct {
 	ReadTimeout    Duration `json:"httpReadTimeout"`
 	WriteTimeout   Duration `json:"httpWriteTimeout"`
 	ListenLimit    int      `json:"httpListenLimit"`
+	TLSCertPath    string   `json:"tlsCertPath"`
+	TLSKeyPath     string   `json:"tlsKeyPath"`
 }
 
 // UDPConfig is the configuration for the UDP protocol.
@@ -150,6 +152,8 @@ var DefaultConfig = Config{
 		RequestTimeout: Duration{10 * time.Second},
 		ReadTimeout:    Duration{10 * time.Second},
 		WriteTimeout:   Duration{10 * time.Second},
+		TLSCertPath:    "",
+		TLSKeyPath:     "",
 	},
 
 	UDPConfig: UDPConfig{
