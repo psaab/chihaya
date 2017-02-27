@@ -175,7 +175,7 @@ func (s *Server) Serve() {
 	}
 
 	glog.Info("HTTP server shut down cleanly")
-	if gracessl != nil {
+	if s.gracessl != nil {
 		glog.Info("HTTPS server shut down cleanly")
 	}
 }
