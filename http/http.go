@@ -8,9 +8,14 @@ package http
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/golang/glog"
@@ -22,6 +27,62 @@ import (
 	"github.com/chihaya/chihaya/stats"
 	"github.com/chihaya/chihaya/tracker"
 )
+
+type keypairReloader struct {
+	certMu   sync.RWMutex
+	cert     *tls.Certificate
+	certPath string
+	keyPath  string
+}
+
+func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
+	result := &keypairReloader{
+		certPath: certPath,
+		keyPath:  keyPath,
+	}
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+	glog.Infof("CERT SIZE %d\n", len(cert.Certificate))
+	{
+		pCert, err := x509.ParseCertificate(cert.Certificate[0])
+		if err == nil {
+			glog.Info("Expire time: ", pCert.NotAfter)
+		}
+	}
+	result.cert = &cert
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGHUP)
+		for range c {
+			glog.Errorf("Received SIGHUP, reloading TLS certificate and key from %q and %q", certPath, keyPath)
+			if err := result.maybeReload(); err != nil {
+				glog.Errorf("Keeping old TLS certificate because the new one could not be loaded: %v", err)
+			}
+		}
+	}()
+	return result, nil
+}
+
+func (kpr *keypairReloader) maybeReload() error {
+	newCert, err := tls.LoadX509KeyPair(kpr.certPath, kpr.keyPath)
+	if err != nil {
+		return err
+	}
+	kpr.certMu.Lock()
+	defer kpr.certMu.Unlock()
+	kpr.cert = &newCert
+	return nil
+}
+
+func (kpr *keypairReloader) GetCertificateFunc() func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	return func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		kpr.certMu.RLock()
+		defer kpr.certMu.RUnlock()
+		return kpr.cert, nil
+	}
+}
 
 // ResponseHandler is an HTTP handler that returns a status code.
 type ResponseHandler func(http.ResponseWriter, *http.Request, httprouter.Params) (int, error)
@@ -148,12 +209,12 @@ func (s *Server) Serve() {
 		glog.V(0).Info("Starting HTTPS on ", s.config.HTTPConfig.ListenAddr)
 		tlsl := m.Match(cmux.Any())
 
-		certificate, err := tls.LoadX509KeyPair(s.config.HTTPConfig.TLSCertPath, s.config.HTTPConfig.TLSKeyPath)
+		kpr, err := NewKeypairReloader(s.config.HTTPConfig.TLSCertPath, s.config.HTTPConfig.TLSKeyPath)
 		if err != nil {
 			panic(err)
 		}
 		config := &tls.Config{
-			Certificates: []tls.Certificate{certificate},
+			GetCertificate: kpr.GetCertificateFunc(),
 		}
 
 		// Create TLS listener.
