@@ -12,10 +12,10 @@ import (
 
 	"net"
 	"net/http"
-	"os"
-	"os/signal"
+	//"os"
+	//"os/signal"
 	"sync"
-	"syscall"
+	//"syscall"
 	"time"
 
 	"github.com/golang/glog"
@@ -29,10 +29,12 @@ import (
 )
 
 type keypairReloader struct {
-	certMu   sync.RWMutex
-	cert     *tls.Certificate
-	certPath string
-	keyPath  string
+	certMu     sync.RWMutex
+	cert       *tls.Certificate
+	certPath   string
+	keyPath    string
+	timer      *time.Timer
+	reloadTime time.Duration
 }
 
 func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
@@ -44,22 +46,32 @@ func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
 	if err != nil {
 		return nil, err
 	}
-	glog.Infof("CERT SIZE %d\n", len(cert.Certificate))
-	{
-		pCert, err := x509.ParseCertificate(cert.Certificate[0])
-		if err == nil {
-			glog.Info("Expire time: ", pCert.NotAfter)
-		}
-	}
+
 	result.cert = &cert
 	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, syscall.SIGHUP)
-		for range c {
-			glog.Errorf("Received SIGHUP, reloading TLS certificate and key from %q and %q", certPath, keyPath)
-			if err := result.maybeReload(); err != nil {
-				glog.Errorf("Keeping old TLS certificate because the new one could not be loaded: %v", err)
+		for {
+			pCert, err := x509.ParseCertificate(result.cert.Certificate[0])
+			if err != nil {
+				glog.Errorf("Failed to parse x509 Certificate %v", err)
+				result.reloadTime = time.Second * 6 * 3600 // XXX: Configuration for default cert refresh?
+			} else {
+				result.reloadTime = time.Until(pCert.NotAfter) - (time.Second * 3600)
 			}
+			glog.Info("Time until certificate reload: ", result.reloadTime)
+			if result.timer == nil {
+				result.timer = time.AfterFunc(result.reloadTime, func() {
+					if err := result.maybeReload(); err != nil {
+						glog.Errorf("Keeping old TLS certificate because the new one could not be loaded: %v", err)
+					} else {
+						glog.Info("TLS certificate successfully reloaded")
+					}
+				})
+			} else {
+				result.timer.Reset(result.reloadTime)
+			}
+			// Wait before exiting, in order to give our first timer enough time to finish
+			countdownBeforeExit := time.NewTimer(result.reloadTime)
+			<-countdownBeforeExit.C
 		}
 	}()
 	return result, nil
@@ -223,7 +235,7 @@ func (s *Server) Serve() {
 		gracessl := newGraceful(s)
 		s.gracessl = gracessl
 		gracessl.SetKeepAlivesEnabled(false)
-		gracessl.ShutdownInitiated = func() { s.stopping = true }
+		gracessl.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
 		// Serve HTTP over TLS.
 		go gracessl.Serve(tlslL)
 	}
