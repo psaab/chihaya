@@ -49,6 +49,8 @@ func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
 
 	result.cert = &cert
 	go func() {
+		var wg sync.WaitGroup
+
 		for {
 			pCert, err := x509.ParseCertificate(result.cert.Certificate[0])
 			if err != nil {
@@ -68,13 +70,14 @@ func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
 					} else {
 						glog.Info("TLS certificate successfully reloaded")
 					}
+					wg.Done()
 				})
+				wg.Add(1)
 			} else {
 				result.timer.Reset(result.reloadTime)
+				wg.Add(1)
 			}
-			// Wait before exiting, in order to give our first timer enough time to finish
-			countdownBeforeExit := time.NewTimer(result.reloadTime)
-			<-countdownBeforeExit.C
+			wg.Wait()
 		}
 	}()
 	return result, nil
