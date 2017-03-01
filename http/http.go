@@ -56,6 +56,9 @@ func NewKeypairReloader(certPath, keyPath string) (*keypairReloader, error) {
 				result.reloadTime = time.Second * 6 * 3600 // XXX: Configuration for default cert refresh?
 			} else {
 				result.reloadTime = time.Until(pCert.NotAfter) - (time.Second * 3600)
+				if result.reloadTime < 0 {
+					result.reloadTime = time.Until(pCert.NotAfter)
+				}
 			}
 			glog.Info("Time until certificate reload: ", result.reloadTime)
 			if result.timer == nil {
