@@ -7,10 +7,15 @@ package main
 import (
 	"github.com/chihaya/chihaya"
 	"github.com/chihaya/chihaya/config"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 )
 
 func main() {
+	go func() {
+		http.ListenAndServe(":16969", http.DefaultServeMux)
+	}()
 	config.DefaultConfig.HTTPConfig.TLSKeyPath = os.Getenv("THRIFT_TLS_CL_KEY_PATH")
 	config.DefaultConfig.HTTPConfig.TLSCertPath = os.Getenv("THRIFT_TLS_CL_CERT_PATH")
 	chihaya.Boot()
