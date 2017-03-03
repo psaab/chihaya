@@ -10,23 +10,78 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 
+	"io"
 	"net"
 	"net/http"
-	//"os"
-	//"os/signal"
 	"sync"
-	//"syscall"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
-	"github.com/soheilhy/cmux"
 	"github.com/tylerb/graceful"
 
 	"github.com/chihaya/chihaya/config"
 	"github.com/chihaya/chihaya/stats"
 	"github.com/chihaya/chihaya/tracker"
 )
+
+type Conn struct {
+	net.Conn
+	b byte
+	e error
+	f bool
+}
+
+func (c *Conn) Read(b []byte) (int, error) {
+	if c.f {
+		c.f = false
+		b[0] = c.b
+		if len(b) > 1 && c.e == nil {
+			n, e := c.Conn.Read(b[1:])
+			if e != nil {
+				c.Conn.Close()
+			}
+			return n + 1, e
+		} else {
+			return 1, c.e
+		}
+	}
+	return c.Conn.Read(b)
+}
+
+type SplitListener struct {
+	net.Listener
+	TLSConfig *tls.Config
+}
+
+func (l *SplitListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	b := make([]byte, 1)
+	_, err = c.Read(b)
+	if err != nil {
+		c.Close()
+		if err != io.EOF {
+			return nil, err
+		}
+	}
+
+	con := &Conn{
+		Conn: c,
+		b:    b[0],
+		e:    err,
+		f:    true,
+	}
+
+	if b[0] == 22 {
+		return tls.Server(con, l.TLSConfig), nil
+	}
+
+	return con, nil
+}
 
 type keypairReloader struct {
 	certMu     sync.RWMutex
@@ -110,7 +165,6 @@ type Server struct {
 	config   *config.Config
 	tracker  *tracker.Tracker
 	grace    *graceful.Server
-	gracessl *graceful.Server
 	stopping bool
 }
 
@@ -183,8 +237,15 @@ func (s *Server) connState(conn net.Conn, state http.ConnState) {
 	}
 }
 
-func newGraceful(s *Server) *graceful.Server {
-	return &graceful.Server{
+// Serve runs an HTTP server, blocking until the server has shut down.
+func (s *Server) Serve() {
+	glog.V(0).Info("Starting HTTP on ", s.config.HTTPConfig.ListenAddr)
+
+	if s.config.HTTPConfig.ListenLimit != 0 {
+		glog.V(0).Info("Limiting connections to ", s.config.HTTPConfig.ListenLimit)
+	}
+
+	grace := &graceful.Server{
 		Timeout:     s.config.HTTPConfig.RequestTimeout.Duration,
 		ConnState:   s.connState,
 		ListenLimit: s.config.HTTPConfig.ListenLimit,
@@ -197,35 +258,18 @@ func newGraceful(s *Server) *graceful.Server {
 			WriteTimeout: s.config.HTTPConfig.WriteTimeout.Duration,
 		},
 	}
-}
-
-// Serve runs an HTTP server, blocking until the server has shut down.
-func (s *Server) Serve() {
-	glog.V(0).Info("Starting HTTP on ", s.config.HTTPConfig.ListenAddr)
-
-	if s.config.HTTPConfig.ListenLimit != 0 {
-		glog.V(0).Info("Limiting connections to ", s.config.HTTPConfig.ListenLimit)
-	}
-
-	grace := newGraceful(s)
 
 	l, err := net.Listen("tcp", s.config.HTTPConfig.ListenAddr)
 	if err != nil {
 		panic(err)
 	}
 
-	// Create a cmux.
-	m := cmux.New(l)
-	httpl := m.Match(cmux.HTTP1Fast())
-
 	s.grace = grace
 	grace.SetKeepAlivesEnabled(false)
 	grace.ShutdownInitiated = func() { s.stopping = true }
-	go grace.Serve(httpl)
 
 	if s.config.HTTPConfig.TLSCertPath != "" && s.config.HTTPConfig.TLSKeyPath != "" {
 		glog.V(0).Info("Starting HTTPS on ", s.config.HTTPConfig.ListenAddr)
-		tlsl := m.Match(cmux.Any())
 
 		kpr, err := NewKeypairReloader(s.config.HTTPConfig.TLSCertPath, s.config.HTTPConfig.TLSKeyPath)
 		if err != nil {
@@ -234,19 +278,10 @@ func (s *Server) Serve() {
 		config := &tls.Config{
 			GetCertificate: kpr.GetCertificateFunc(),
 		}
-
-		// Create TLS listener.
-		tlslL := tls.NewListener(tlsl, config)
-
-		gracessl := newGraceful(s)
-		s.gracessl = gracessl
-		gracessl.SetKeepAlivesEnabled(false)
-		gracessl.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
-		// Serve HTTP over TLS.
-		go gracessl.Serve(tlslL)
+		l = &SplitListener{Listener: l, TLSConfig: config}
 	}
 
-	if err := m.Serve(); err != nil {
+	if err := grace.Serve(l); err != nil {
 		if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
 			glog.Errorf("Failed to gracefully run HTTP server: %s", err.Error())
 			return
@@ -254,18 +289,12 @@ func (s *Server) Serve() {
 	}
 
 	glog.Info("HTTP server shut down cleanly")
-	if s.gracessl != nil {
-		glog.Info("HTTPS server shut down cleanly")
-	}
 }
 
 // Stop cleanly shuts down the server.
 func (s *Server) Stop() {
 	if !s.stopping {
 		s.grace.Stop(s.grace.Timeout)
-		if s.gracessl != nil {
-			s.gracessl.Stop(s.gracessl.Timeout)
-		}
 	}
 }
 
