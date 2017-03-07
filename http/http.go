@@ -12,10 +12,8 @@ import (
 
 	"net"
 	"net/http"
-	//"os"
-	//"os/signal"
+	"strings"
 	"sync"
-	//"syscall"
 	"time"
 
 	"github.com/golang/glog"
@@ -109,8 +107,8 @@ type ResponseHandler func(http.ResponseWriter, *http.Request, httprouter.Params)
 type Server struct {
 	config   *config.Config
 	tracker  *tracker.Tracker
-	grace    *graceful.Server
-	gracessl *graceful.Server
+	http     *graceful.Server
+	https    *graceful.Server
 	stopping bool
 }
 
@@ -183,6 +181,76 @@ func (s *Server) connState(conn net.Conn, state http.ConnState) {
 	}
 }
 
+// Serve runs an HTTP server, blocking until the server has shut down.
+func (s *Server) Serve() {
+	glog.V(0).Info("Starting HTTP on ", s.config.HTTPConfig.ListenAddr)
+
+	if s.config.HTTPConfig.ListenLimit != 0 {
+		glog.V(0).Info("Limiting connections to ", s.config.HTTPConfig.ListenLimit)
+	}
+
+	l, err := net.Listen("tcp", s.config.HTTPConfig.ListenAddr)
+	if err != nil {
+		panic(err)
+	}
+
+	// Create a cmux.
+	mux := cmux.New(l)
+	httpListener := mux.Match(cmux.HTTP1Fast())
+
+	if s.config.HTTPConfig.TLSCertPath != "" && s.config.HTTPConfig.TLSKeyPath != "" {
+		glog.V(0).Info("Starting HTTPS on ", s.config.HTTPConfig.ListenAddr)
+
+		kpr, err := NewKeypairReloader(s.config.HTTPConfig.TLSCertPath, s.config.HTTPConfig.TLSKeyPath)
+		if err != nil {
+			panic(err)
+		}
+
+		tlsCfg := &tls.Config{
+			GetCertificate: kpr.GetCertificateFunc(),
+		}
+
+		s.https = newGraceful(s)
+		s.https.SetKeepAlivesEnabled(false)
+		s.https.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
+
+		// Create TLS listener.
+		httpsListener := tls.NewListener(mux.Match(cmux.Any()), tlsCfg)
+
+		go func() {
+			if err := s.https.Serve(httpsListener); err != nil && err != cmux.ErrListenerClosed {
+				panic(err)
+			}
+			glog.Info("HTTPS server shut down cleanly")
+		}()
+	}
+
+	s.http = newGraceful(s)
+	s.http.SetKeepAlivesEnabled(false)
+	s.http.ShutdownInitiated = func() { s.stopping = true }
+
+	go func() {
+		if err := s.http.Serve(httpListener); err != nil && err != cmux.ErrListenerClosed {
+			panic(err)
+		}
+		glog.Info("HTTP server shut down cleanly")
+	}()
+
+	if err := mux.Serve(); !strings.Contains(err.Error(), "use of closed network connection") {
+		panic(err)
+	}
+}
+
+// Stop cleanly shuts down the server.
+func (s *Server) Stop() {
+	if !s.stopping {
+		s.http.Stop(s.http.Timeout)
+		if s.https != nil {
+			s.https.Stop(s.https.Timeout)
+		}
+	}
+}
+
 func newGraceful(s *Server) *graceful.Server {
 	return &graceful.Server{
 		Timeout:     s.config.HTTPConfig.RequestTimeout.Duration,
@@ -196,76 +264,6 @@ func newGraceful(s *Server) *graceful.Server {
 			ReadTimeout:  s.config.HTTPConfig.ReadTimeout.Duration,
 			WriteTimeout: s.config.HTTPConfig.WriteTimeout.Duration,
 		},
-	}
-}
-
-// Serve runs an HTTP server, blocking until the server has shut down.
-func (s *Server) Serve() {
-	glog.V(0).Info("Starting HTTP on ", s.config.HTTPConfig.ListenAddr)
-
-	if s.config.HTTPConfig.ListenLimit != 0 {
-		glog.V(0).Info("Limiting connections to ", s.config.HTTPConfig.ListenLimit)
-	}
-
-	grace := newGraceful(s)
-
-	l, err := net.Listen("tcp", s.config.HTTPConfig.ListenAddr)
-	if err != nil {
-		panic(err)
-	}
-
-	// Create a cmux.
-	m := cmux.New(l)
-	httpl := m.Match(cmux.HTTP1Fast())
-
-	s.grace = grace
-	grace.SetKeepAlivesEnabled(false)
-	grace.ShutdownInitiated = func() { s.stopping = true }
-	go grace.Serve(httpl)
-
-	if s.config.HTTPConfig.TLSCertPath != "" && s.config.HTTPConfig.TLSKeyPath != "" {
-		glog.V(0).Info("Starting HTTPS on ", s.config.HTTPConfig.ListenAddr)
-		tlsl := m.Match(cmux.Any())
-
-		kpr, err := NewKeypairReloader(s.config.HTTPConfig.TLSCertPath, s.config.HTTPConfig.TLSKeyPath)
-		if err != nil {
-			panic(err)
-		}
-		config := &tls.Config{
-			GetCertificate: kpr.GetCertificateFunc(),
-		}
-
-		// Create TLS listener.
-		tlslL := tls.NewListener(tlsl, config)
-
-		gracessl := newGraceful(s)
-		s.gracessl = gracessl
-		gracessl.SetKeepAlivesEnabled(false)
-		gracessl.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
-		// Serve HTTP over TLS.
-		go gracessl.Serve(tlslL)
-	}
-
-	if err := m.Serve(); err != nil {
-		if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
-			glog.Errorf("Failed to gracefully run HTTP server: %s", err.Error())
-			return
-		}
-	}
-
-	glog.Info("HTTP server shut down cleanly")
-	if s.gracessl != nil {
-		glog.Info("HTTPS server shut down cleanly")
-	}
-}
-
-// Stop cleanly shuts down the server.
-func (s *Server) Stop() {
-	if !s.stopping {
-		s.grace.Stop(s.grace.Timeout)
-		if s.gracessl != nil {
-			s.gracessl.Stop(s.gracessl.Timeout)
-		}
 	}
 }
 
