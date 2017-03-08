@@ -162,13 +162,27 @@ func newRouter(s *Server) *httprouter.Router {
 
 // connState is used by graceful in order to gracefully shutdown. It also
 // keeps track of connection stats.
+func (s *Server) connStateSSL(conn net.Conn, state http.ConnState) {
+	s.connStateImpl(conn, state, true)
+}
+
 func (s *Server) connState(conn net.Conn, state http.ConnState) {
+	s.connStateImpl(conn, state, false)
+}
+
+func (s *Server) connStateImpl(conn net.Conn, state http.ConnState, ssl bool) {
 	switch state {
 	case http.StateNew:
 		stats.RecordEvent(stats.AcceptedConnection)
+		if ssl {
+			stats.RecordEvent(stats.AcceptedSSLConnection)
+		}
 
 	case http.StateClosed:
 		stats.RecordEvent(stats.ClosedConnection)
+		if ssl {
+			stats.RecordEvent(stats.ClosedSSLConnection)
+		}
 
 	case http.StateHijacked:
 		panic("connection impossibly hijacked")
@@ -210,7 +224,7 @@ func (s *Server) Serve() {
 			GetCertificate: kpr.GetCertificateFunc(),
 		}
 
-		s.https = newGraceful(s)
+		s.https = newGraceful(s, true)
 		s.https.SetKeepAlivesEnabled(false)
 		s.https.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
 
@@ -225,7 +239,7 @@ func (s *Server) Serve() {
 		}()
 	}
 
-	s.http = newGraceful(s)
+	s.http = newGraceful(s, false)
 	s.http.SetKeepAlivesEnabled(false)
 	s.http.ShutdownInitiated = func() { s.stopping = true }
 
@@ -251,10 +265,14 @@ func (s *Server) Stop() {
 	}
 }
 
-func newGraceful(s *Server) *graceful.Server {
+func newGraceful(s *Server, ssl bool) *graceful.Server {
+	connState := s.connState
+	if ssl {
+		connState = s.connStateSSL
+	}
 	return &graceful.Server{
 		Timeout:     s.config.HTTPConfig.RequestTimeout.Duration,
-		ConnState:   s.connState,
+		ConnState:   connState,
 		ListenLimit: s.config.HTTPConfig.ListenLimit,
 
 		NoSignalHandling: true,

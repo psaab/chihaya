@@ -32,7 +32,9 @@ const (
 	ReapedTorrent
 
 	AcceptedConnection
+	AcceptedSSLConnection
 	ClosedConnection
+	ClosedSSLConnection
 
 	HandledRequest
 	ErroredRequest
@@ -69,9 +71,11 @@ type PercentileTimes struct {
 type Stats struct {
 	Started time.Time // Time at which Chihaya was booted.
 
-	OpenConnections     int64  `json:"connectionsOpen"`
-	ConnectionsAccepted uint64 `json:"connectionsAccepted"`
-	BytesTransmitted    uint64 `json:"bytesTransmitted"`
+	OpenConnections        int64  `json:"connectionsOpen"`
+	OpenSSLConnections     int64  `json:"connectionsSSLOpen"`
+	ConnectionsAccepted    uint64 `json:"connectionsAccepted"`
+	ConnectionsSSLAccepted uint64 `json:"connectionsSSLAccepted"`
+	BytesTransmitted       uint64 `json:"bytesTransmitted"`
 
 	GoRoutines int `json:"runtimeGoRoutines"`
 
@@ -211,8 +215,18 @@ func (s *Stats) handleEvent(event int) {
 		s.ConnectionsAccepted++
 		s.OpenConnections++
 
+	case AcceptedSSLConnection:
+		s.ConnectionsAccepted++
+		s.OpenConnections++
+		s.ConnectionsSSLAccepted++
+		s.OpenSSLConnections++
+
 	case ClosedConnection:
 		s.OpenConnections--
+
+	case ClosedSSLConnection:
+		s.OpenConnections--
+		s.OpenSSLConnections--
 
 	case HandledRequest:
 		s.RequestsHandled++
