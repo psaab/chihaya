@@ -114,7 +114,7 @@ type Server struct {
 
 // makeHandler wraps our ResponseHandlers while timing requests, collecting,
 // stats, logging, and handling errors.
-func makeHandler(handler ResponseHandler) httprouter.Handle {
+func makeHandler(handler ResponseHandler, ssl bool) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		start := time.Now()
 		httpCode, err := handler(w, r, p)
@@ -138,10 +138,15 @@ func makeHandler(handler ResponseHandler) httprouter.Handle {
 				reqString = r.URL.RequestURI() + " " + r.RemoteAddr
 			}
 
+			httpString := "HTTP"
+			if ssl {
+				httpString = "HTTPS"
+			}
+
 			if len(msg) > 0 {
-				glog.Errorf("[HTTP - %9s] %s (%d - %s)", duration, reqString, httpCode, msg)
+				glog.Errorf("[%-5s - %9s] %s (%d - %s)", httpString, duration, reqString, httpCode, msg)
 			} else {
-				glog.Infof("[HTTP - %9s] %s (%d)", duration, reqString, httpCode)
+				glog.Infof("[%-5s - %9s] %s (%d)", httpString, duration, reqString, httpCode)
 			}
 		}
 
@@ -151,11 +156,11 @@ func makeHandler(handler ResponseHandler) httprouter.Handle {
 }
 
 // newRouter returns a router with all the routes.
-func newRouter(s *Server) *httprouter.Router {
+func newRouter(s *Server, ssl bool) *httprouter.Router {
 	r := httprouter.New()
 
-	r.GET("/announce", makeHandler(s.serveAnnounce))
-	r.GET("/scrape", makeHandler(s.serveScrape))
+	r.GET("/announce", makeHandler(s.serveAnnounce, ssl))
+	r.GET("/scrape", makeHandler(s.serveScrape, ssl))
 
 	return r
 }
@@ -278,7 +283,7 @@ func newGraceful(s *Server, ssl bool) *graceful.Server {
 		NoSignalHandling: true,
 		Server: &http.Server{
 			Addr:         s.config.HTTPConfig.ListenAddr,
-			Handler:      newRouter(s),
+			Handler:      newRouter(s, ssl),
 			ReadTimeout:  s.config.HTTPConfig.ReadTimeout.Duration,
 			WriteTimeout: s.config.HTTPConfig.WriteTimeout.Duration,
 		},
