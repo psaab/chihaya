@@ -12,13 +12,12 @@ import (
 
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/aaw/maybe_tls"
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
-	"github.com/soheilhy/cmux"
 	"github.com/tylerb/graceful"
 
 	"github.com/chihaya/chihaya/config"
@@ -108,13 +107,12 @@ type Server struct {
 	config   *config.Config
 	tracker  *tracker.Tracker
 	http     *graceful.Server
-	https    *graceful.Server
 	stopping bool
 }
 
 // makeHandler wraps our ResponseHandlers while timing requests, collecting,
 // stats, logging, and handling errors.
-func makeHandler(handler ResponseHandler, ssl bool) httprouter.Handle {
+func makeHandler(handler ResponseHandler) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		start := time.Now()
 		httpCode, err := handler(w, r, p)
@@ -138,15 +136,10 @@ func makeHandler(handler ResponseHandler, ssl bool) httprouter.Handle {
 				reqString = r.URL.RequestURI() + " " + r.RemoteAddr
 			}
 
-			httpString := "HTTP"
-			if ssl {
-				httpString = "HTTPS"
-			}
-
 			if len(msg) > 0 {
-				glog.Errorf("[%-5s - %9s] %s (%d - %s)", httpString, duration, reqString, httpCode, msg)
+				glog.Errorf("[HTTP - %9s] %s (%d - %s)", duration, reqString, httpCode, msg)
 			} else {
-				glog.Infof("[%-5s - %9s] %s (%d)", httpString, duration, reqString, httpCode)
+				glog.Infof("[HTTP - %9s] %s (%d)", duration, reqString, httpCode)
 			}
 		}
 
@@ -156,26 +149,26 @@ func makeHandler(handler ResponseHandler, ssl bool) httprouter.Handle {
 }
 
 // newRouter returns a router with all the routes.
-func newRouter(s *Server, ssl bool) *httprouter.Router {
+func newRouter(s *Server) *httprouter.Router {
 	r := httprouter.New()
 
-	r.GET("/announce", makeHandler(s.serveAnnounce, ssl))
-	r.GET("/scrape", makeHandler(s.serveScrape, ssl))
+	r.GET("/announce", makeHandler(s.serveAnnounce))
+	r.GET("/scrape", makeHandler(s.serveScrape))
 
 	return r
 }
 
 // connState is used by graceful in order to gracefully shutdown. It also
 // keeps track of connection stats.
-func (s *Server) connStateSSL(conn net.Conn, state http.ConnState) {
-	s.connStateImpl(conn, state, true)
-}
-
 func (s *Server) connState(conn net.Conn, state http.ConnState) {
-	s.connStateImpl(conn, state, false)
-}
+	var ssl bool
 
-func (s *Server) connStateImpl(conn net.Conn, state http.ConnState, ssl bool) {
+	if gc, ok := conn.(*graceful.LimitListenerConn); ok {
+		_, ssl = gc.Conn.(*tls.Conn)
+	} else {
+		_, ssl = conn.(*tls.Conn)
+	}
+
 	switch state {
 	case http.StateNew:
 		stats.RecordEvent(stats.AcceptedConnection)
@@ -213,9 +206,9 @@ func (s *Server) Serve() {
 		panic(err)
 	}
 
-	// Create a cmux.
-	mux := cmux.New(l)
-	httpListener := mux.Match(cmux.HTTP1Fast())
+	s.http = newGraceful(s, false)
+	s.http.SetKeepAlivesEnabled(false)
+	s.http.ShutdownInitiated = func() { s.stopping = true }
 
 	if s.config.HTTPConfig.TLSCertPath != "" && s.config.HTTPConfig.TLSKeyPath != "" {
 		glog.V(0).Info("Starting HTTPS on ", s.config.HTTPConfig.ListenAddr)
@@ -229,61 +222,39 @@ func (s *Server) Serve() {
 			GetCertificate: kpr.GetCertificateFunc(),
 		}
 
-		s.https = newGraceful(s, true)
-		s.https.SetKeepAlivesEnabled(false)
-		s.https.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
+		//s.http = newGraceful(s, true)
+		//s.http.SetKeepAlivesEnabled(false)
+		s.http.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
 
-		// Create TLS listener.
-		httpsListener := tls.NewListener(mux.Match(cmux.Any()), tlsCfg)
-
-		go func() {
-			if err := s.https.Serve(httpsListener); err != nil && err != cmux.ErrListenerClosed {
-				panic(err)
-			}
-			glog.Info("HTTPS server shut down cleanly")
-		}()
+		l = &maybe_tls.Listener{l, tlsCfg}
 	}
 
-	s.http = newGraceful(s, false)
-	s.http.SetKeepAlivesEnabled(false)
-	s.http.ShutdownInitiated = func() { s.stopping = true }
-
-	go func() {
-		if err := s.http.Serve(httpListener); err != nil && err != cmux.ErrListenerClosed {
-			panic(err)
+	if err := s.http.Serve(l); err != nil {
+		if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
+			glog.Errorf("Failed to gracefully run HTTP server: %s", err.Error())
+			return
 		}
-		glog.Info("HTTP server shut down cleanly")
-	}()
-
-	if err := mux.Serve(); !strings.Contains(err.Error(), "use of closed network connection") {
-		panic(err)
 	}
+	glog.Info("HTTP server shut down cleanly")
 }
 
 // Stop cleanly shuts down the server.
 func (s *Server) Stop() {
 	if !s.stopping {
 		s.http.Stop(s.http.Timeout)
-		if s.https != nil {
-			s.https.Stop(s.https.Timeout)
-		}
 	}
 }
 
 func newGraceful(s *Server, ssl bool) *graceful.Server {
-	connState := s.connState
-	if ssl {
-		connState = s.connStateSSL
-	}
 	return &graceful.Server{
 		Timeout:     s.config.HTTPConfig.RequestTimeout.Duration,
-		ConnState:   connState,
+		ConnState:   s.connState,
 		ListenLimit: s.config.HTTPConfig.ListenLimit,
 
 		NoSignalHandling: true,
 		Server: &http.Server{
 			Addr:         s.config.HTTPConfig.ListenAddr,
-			Handler:      newRouter(s, ssl),
+			Handler:      newRouter(s),
 			ReadTimeout:  s.config.HTTPConfig.ReadTimeout.Duration,
 			WriteTimeout: s.config.HTTPConfig.WriteTimeout.Duration,
 		},
