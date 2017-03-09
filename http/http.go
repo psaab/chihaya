@@ -10,6 +10,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 
+	"bufio"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -195,6 +197,19 @@ func (s *Server) connState(conn net.Conn, state http.ConnState) {
 	}
 }
 
+func MatchTLS() cmux.Matcher {
+	return func(r io.Reader) bool {
+		br := bufio.NewReader(&io.LimitedReader{R: r, N: 6})
+		b := make([]byte, 6)
+		_, err := br.Read(b)
+		if err == nil {
+			return len(b) >= 6 && b[0] == '\x16' && b[1] == '\x03' &&
+				(b[2] == '\x00' || b[2] == '\x01') && b[5] == '\x01'
+		}
+		return false
+	}
+}
+
 // Serve runs an HTTP server, blocking until the server has shut down.
 func (s *Server) Serve() {
 	glog.V(0).Info("Starting HTTP on ", s.config.HTTPConfig.ListenAddr)
@@ -212,7 +227,7 @@ func (s *Server) Serve() {
 	mux := cmux.New(l)
 	httpListener := mux.Match(cmux.HTTP1Fast())
 
-	s.http = newGraceful(s, false)
+	s.http = newGraceful(s)
 	s.http.SetKeepAlivesEnabled(false)
 	s.http.ShutdownInitiated = func() { s.stopping = true }
 
@@ -235,12 +250,12 @@ func (s *Server) Serve() {
 			GetCertificate: kpr.GetCertificateFunc(),
 		}
 
-		s.https = newGraceful(s, true)
+		s.https = newGraceful(s)
 		s.https.SetKeepAlivesEnabled(false)
 		s.http.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
 
 		// Create TLS listener.
-		httpsListener := tls.NewListener(mux.Match(cmux.Any()), tlsCfg)
+		httpsListener := tls.NewListener(mux.Match(MatchTLS()), tlsCfg)
 		go func() {
 			if err := s.https.Serve(httpsListener); err != nil && err != cmux.ErrListenerClosed {
 				panic(err)
@@ -264,7 +279,7 @@ func (s *Server) Stop() {
 	}
 }
 
-func newGraceful(s *Server, ssl bool) *graceful.Server {
+func newGraceful(s *Server) *graceful.Server {
 	return &graceful.Server{
 		Timeout:     s.config.HTTPConfig.RequestTimeout.Duration,
 		ConnState:   s.connState,
