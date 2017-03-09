@@ -12,12 +12,13 @@ import (
 
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/aaw/maybe_tls"
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
+	"github.com/soheilhy/cmux"
 	"github.com/tylerb/graceful"
 
 	"github.com/chihaya/chihaya/config"
@@ -107,6 +108,7 @@ type Server struct {
 	config   *config.Config
 	tracker  *tracker.Tracker
 	http     *graceful.Server
+	https    *graceful.Server
 	stopping bool
 }
 
@@ -206,9 +208,20 @@ func (s *Server) Serve() {
 		panic(err)
 	}
 
+	// Create a cmux.
+	mux := cmux.New(l)
+	httpListener := mux.Match(cmux.HTTP1Fast())
+
 	s.http = newGraceful(s, false)
 	s.http.SetKeepAlivesEnabled(false)
 	s.http.ShutdownInitiated = func() { s.stopping = true }
+
+	go func() {
+		if err := s.http.Serve(httpListener); err != nil && err != cmux.ErrListenerClosed {
+			panic(err)
+		}
+		glog.Info("HTTP server shut down cleanly")
+	}()
 
 	if s.config.HTTPConfig.TLSCertPath != "" && s.config.HTTPConfig.TLSKeyPath != "" {
 		glog.V(0).Info("Starting HTTPS on ", s.config.HTTPConfig.ListenAddr)
@@ -222,26 +235,32 @@ func (s *Server) Serve() {
 			GetCertificate: kpr.GetCertificateFunc(),
 		}
 
-		//s.http = newGraceful(s, true)
-		//s.http.SetKeepAlivesEnabled(false)
+		s.https = newGraceful(s, true)
+		s.https.SetKeepAlivesEnabled(false)
 		s.http.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
 
-		l = &maybe_tls.Listener{l, tlsCfg}
+		// Create TLS listener.
+		httpsListener := tls.NewListener(mux.Match(cmux.Any()), tlsCfg)
+		go func() {
+			if err := s.https.Serve(httpsListener); err != nil && err != cmux.ErrListenerClosed {
+				panic(err)
+			}
+			glog.Info("HTTPS server shut down cleanly")
+		}()
 	}
 
-	if err := s.http.Serve(l); err != nil {
-		if opErr, ok := err.(*net.OpError); !ok || (ok && opErr.Op != "accept") {
-			glog.Errorf("Failed to gracefully run HTTP server: %s", err.Error())
-			return
-		}
+	if err := mux.Serve(); !strings.Contains(err.Error(), "use of closed network connection") {
+		panic(err)
 	}
-	glog.Info("HTTP server shut down cleanly")
 }
 
 // Stop cleanly shuts down the server.
 func (s *Server) Stop() {
 	if !s.stopping {
 		s.http.Stop(s.http.Timeout)
+		if s.https != nil {
+			s.https.Stop(s.https.Timeout)
+		}
 	}
 }
 
