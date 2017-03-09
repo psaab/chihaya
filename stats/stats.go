@@ -216,8 +216,6 @@ func (s *Stats) handleEvent(event int) {
 		s.OpenConnections++
 
 	case AcceptedSSLConnection:
-		s.ConnectionsAccepted++
-		s.OpenConnections++
 		s.ConnectionsSSLAccepted++
 		s.OpenSSLConnections++
 
@@ -225,7 +223,6 @@ func (s *Stats) handleEvent(event int) {
 		s.OpenConnections--
 
 	case ClosedSSLConnection:
-		s.OpenConnections--
 		s.OpenSSLConnections--
 
 	case HandledRequest:
