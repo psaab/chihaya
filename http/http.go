@@ -20,6 +20,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/soheilhy/cmux"
 	"github.com/tylerb/graceful"
+	"github.com/valyala/fasthttp/reuseport"
 
 	"github.com/chihaya/chihaya/config"
 	"github.com/chihaya/chihaya/stats"
@@ -142,25 +143,14 @@ func (s *Server) Serve() {
 		glog.V(0).Info("Limiting connections to ", s.config.HTTPConfig.ListenLimit)
 	}
 
-	l, err := net.Listen("tcp", s.config.HTTPConfig.ListenAddr)
+	l, err := reuseport.Listen("tcp6", s.config.HTTPConfig.ListenAddr)
 	if err != nil {
 		panic(err)
 	}
 
 	// Create a cmux.
 	mux := cmux.New(l)
-	httpListener := mux.Match(cmux.HTTP1Fast())
-
-	s.http = newGraceful(s)
-	s.http.SetKeepAlivesEnabled(false)
-	s.http.ShutdownInitiated = func() { s.stopping = true }
-
-	go func() {
-		if err := s.http.Serve(httpListener); err != nil && err != cmux.ErrListenerClosed {
-			panic(err)
-		}
-		glog.Info("HTTP server shut down cleanly")
-	}()
+	mux.SetReadTimeout(s.config.HTTPConfig.ReadTimeout.Duration)
 
 	if s.config.HTTPConfig.TLSCertPath != "" && s.config.HTTPConfig.TLSKeyPath != "" {
 		glog.V(0).Info("Starting HTTPS on ", s.config.HTTPConfig.ListenAddr)
@@ -176,7 +166,7 @@ func (s *Server) Serve() {
 
 		s.https = newGraceful(s)
 		s.https.SetKeepAlivesEnabled(false)
-		s.http.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
+		s.https.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
 
 		// Create TLS listener.
 		httpsListener := tls.NewListener(mux.Match(MatchTLS()), tlsCfg)
@@ -187,6 +177,19 @@ func (s *Server) Serve() {
 			glog.Info("HTTPS server shut down cleanly")
 		}()
 	}
+
+	httpListener := mux.Match(cmux.Any())
+
+	s.http = newGraceful(s)
+	s.http.SetKeepAlivesEnabled(false)
+	s.http.ShutdownInitiated = func() { s.stopping = true }
+
+	go func() {
+		if err := s.http.Serve(httpListener); err != nil && err != cmux.ErrListenerClosed {
+			panic(err)
+		}
+		glog.Info("HTTP server shut down cleanly")
+	}()
 
 	if err := mux.Serve(); !strings.Contains(err.Error(), "use of closed network connection") {
 		panic(err)
