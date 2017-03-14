@@ -12,7 +12,7 @@ import (
 	"github.com/pushrax/faststats"
 	"github.com/pushrax/flatjson"
 
-	"github.com/chihaya/chihaya/config"
+	"github.com/psaab/chihaya/config"
 )
 
 const (

@@ -5,8 +5,8 @@
 package main
 
 import (
-	"github.com/chihaya/chihaya"
-	"github.com/chihaya/chihaya/config"
+	"github.com/psaab/chihaya"
+	"github.com/psaab/chihaya/config"
 	"net/http"
 	_ "net/http/pprof"
 	"os"

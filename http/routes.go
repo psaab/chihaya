@@ -9,8 +9,8 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 
-	"github.com/chihaya/chihaya/stats"
-	"github.com/chihaya/chihaya/tracker/models"
+	"github.com/psaab/chihaya/stats"
+	"github.com/psaab/chihaya/tracker/models"
 )
 
 func handleTorrentError(err error, w *Writer) (int, error) {

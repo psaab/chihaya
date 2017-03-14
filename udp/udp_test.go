@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chihaya/chihaya/config"
-	"github.com/chihaya/chihaya/tracker"
+	"github.com/psaab/chihaya/config"
+	"github.com/psaab/chihaya/tracker"
 )
 
 var (

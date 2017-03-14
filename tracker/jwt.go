@@ -15,7 +15,7 @@ import (
 	"github.com/coreos/go-oidc/jose"
 	"github.com/golang/glog"
 
-	"github.com/chihaya/chihaya/tracker/models"
+	"github.com/psaab/chihaya/tracker/models"
 )
 
 const jwkTTLFallback = 5 * time.Minute

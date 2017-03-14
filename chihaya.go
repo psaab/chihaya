@@ -17,12 +17,12 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/chihaya/chihaya/api"
-	"github.com/chihaya/chihaya/config"
-	"github.com/chihaya/chihaya/http"
-	"github.com/chihaya/chihaya/stats"
-	"github.com/chihaya/chihaya/tracker"
-	"github.com/chihaya/chihaya/udp"
+	"github.com/psaab/chihaya/api"
+	"github.com/psaab/chihaya/config"
+	"github.com/psaab/chihaya/http"
+	"github.com/psaab/chihaya/stats"
+	"github.com/psaab/chihaya/tracker"
+	"github.com/psaab/chihaya/udp"
 )
 
 var (

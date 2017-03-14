@@ -5,8 +5,8 @@
 package tracker
 
 import (
-	"github.com/chihaya/chihaya/stats"
-	"github.com/chihaya/chihaya/tracker/models"
+	"github.com/psaab/chihaya/stats"
+	"github.com/psaab/chihaya/tracker/models"
 )
 
 // HandleAnnounce encapsulates all of the logic of handling a BitTorrent

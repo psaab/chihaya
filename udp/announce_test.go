@@ -10,7 +10,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/chihaya/chihaya/config"
+	"github.com/psaab/chihaya/config"
 )
 
 func requestAnnounce(sock *net.UDPConn, connID []byte, hash string) ([]byte, error) {

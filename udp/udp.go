@@ -15,8 +15,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/pushrax/bufferpool"
 
-	"github.com/chihaya/chihaya/config"
-	"github.com/chihaya/chihaya/tracker"
+	"github.com/psaab/chihaya/config"
+	"github.com/psaab/chihaya/tracker"
 )
 
 // Server represents a UDP torrent tracker.

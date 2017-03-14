@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/chihaya/bencode"
+	"github.com/psaab/bencode"
 )
 
 func TestPublicScrape(t *testing.T) {

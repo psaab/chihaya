@@ -15,9 +15,9 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/tylerb/graceful"
 
-	"github.com/chihaya/chihaya/config"
-	"github.com/chihaya/chihaya/stats"
-	"github.com/chihaya/chihaya/tracker"
+	"github.com/psaab/chihaya/config"
+	"github.com/psaab/chihaya/stats"
+	"github.com/psaab/chihaya/tracker"
 )
 
 // Server represents an API server for a torrent tracker.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chihaya/chihaya/config"
+	"github.com/psaab/chihaya/config"
 )
 
 var (

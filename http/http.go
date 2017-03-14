@@ -22,9 +22,9 @@ import (
 	"github.com/tylerb/graceful"
 	"github.com/valyala/fasthttp/reuseport"
 
-	"github.com/chihaya/chihaya/config"
-	"github.com/chihaya/chihaya/stats"
-	"github.com/chihaya/chihaya/tracker"
+	"github.com/psaab/chihaya/config"
+	"github.com/psaab/chihaya/stats"
+	"github.com/psaab/chihaya/tracker"
 )
 
 // ResponseHandler is an HTTP handler that returns a status code.

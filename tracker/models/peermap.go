@@ -9,8 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/chihaya/chihaya/config"
-	"github.com/chihaya/chihaya/stats"
+	"github.com/psaab/chihaya/config"
+	"github.com/psaab/chihaya/stats"
 )
 
 // PeerMap is a thread-safe map from PeerKeys to Peers. When PreferredSubnet is

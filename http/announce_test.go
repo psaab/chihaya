@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chihaya/bencode"
-	"github.com/chihaya/chihaya/config"
-	"github.com/chihaya/chihaya/tracker"
-	"github.com/chihaya/chihaya/tracker/models"
+	"github.com/psaab/bencode"
+	"github.com/psaab/chihaya/config"
+	"github.com/psaab/chihaya/tracker"
+	"github.com/psaab/chihaya/tracker/models"
 )
 
 func TestPublicAnnounce(t *testing.T) {

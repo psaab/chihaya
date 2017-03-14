@@ -9,7 +9,7 @@ import (
 	"encoding/binary"
 	"time"
 
-	"github.com/chihaya/chihaya/tracker/models"
+	"github.com/psaab/chihaya/tracker/models"
 )
 
 // Writer implements the tracker.Writer interface for the UDP protocol.

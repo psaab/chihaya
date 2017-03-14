@@ -11,10 +11,10 @@ import (
 	"net/url"
 	"sort"
 
-	"github.com/chihaya/bencode"
-	"github.com/chihaya/chihaya/config"
-	"github.com/chihaya/chihaya/stats"
-	"github.com/chihaya/chihaya/tracker"
+	"github.com/psaab/bencode"
+	"github.com/psaab/chihaya/config"
+	"github.com/psaab/chihaya/stats"
+	"github.com/psaab/chihaya/tracker"
 )
 
 type params map[string]string
