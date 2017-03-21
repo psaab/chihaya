@@ -126,7 +126,7 @@ func New(cfg config.StatsConfig) *Stats {
 
 	if cfg.IncludeMem {
 		s.MemStatsWrapper = NewMemStatsWrapper(cfg.VerboseMem)
-		s.recordMemStats = time.After(cfg.MemUpdateInterval.Duration)
+		s.recordMemStats = time.NewTicker(cfg.MemUpdateInterval.Duration).C
 	}
 
 	s.flattened = flatjson.Flatten(s)
