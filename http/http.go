@@ -139,13 +139,14 @@ func MatchTLS() cmux.Matcher {
 func (s *Server) Serve() {
 	glog.V(0).Info("Starting HTTP on ", s.config.HTTPConfig.ListenAddr)
 
-	if s.config.HTTPConfig.ListenLimit != 0 {
-		glog.V(0).Info("Limiting connections to ", s.config.HTTPConfig.ListenLimit)
-	}
-
 	l, err := reuseport.Listen("tcp6", s.config.HTTPConfig.ListenAddr)
 	if err != nil {
 		panic(err)
+	}
+
+	if s.config.HTTPConfig.ListenLimit != 0 {
+		glog.V(0).Info("Limiting connections to ", s.config.HTTPConfig.ListenLimit)
+		l = graceful.LimitListener(l, s.config.HTTPConfig.ListenLimit)
 	}
 
 	// Create a cmux.
@@ -208,9 +209,8 @@ func (s *Server) Stop() {
 
 func newGraceful(s *Server) *graceful.Server {
 	return &graceful.Server{
-		Timeout:     s.config.HTTPConfig.RequestTimeout.Duration,
-		ConnState:   s.connState,
-		ListenLimit: s.config.HTTPConfig.ListenLimit,
+		Timeout:   s.config.HTTPConfig.RequestTimeout.Duration,
+		ConnState: s.connState,
 
 		NoSignalHandling: true,
 		Server: &http.Server{
