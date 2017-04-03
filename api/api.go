@@ -13,7 +13,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
-	"github.com/tylerb/graceful"
+	"github.com/psaab/graceful"
 
 	"github.com/psaab/chihaya/config"
 	"github.com/psaab/chihaya/stats"

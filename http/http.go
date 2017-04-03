@@ -18,8 +18,8 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
+	"github.com/psaab/graceful"
 	"github.com/soheilhy/cmux"
-	"github.com/tylerb/graceful"
 	"github.com/valyala/fasthttp/reuseport"
 
 	"github.com/psaab/chihaya/config"
