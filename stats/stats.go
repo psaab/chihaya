@@ -9,8 +9,8 @@ package stats
 import (
 	"time"
 
+	"github.com/psaab/flatjson"
 	"github.com/pushrax/faststats"
-	"github.com/pushrax/flatjson"
 
 	"github.com/psaab/chihaya/config"
 )
