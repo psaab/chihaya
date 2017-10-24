@@ -165,9 +165,23 @@ func (s *Server) Serve() {
 			GetCertificate: kpr.GetCertificateFunc(),
 		}
 
+		var tsr *TicketSeedsReloader
+		if s.config.HTTPConfig.TLSSeedsPath != "" {
+			tsr, err = NewTicketSeedsReloader(s.config.HTTPConfig.TLSSeedsPath, tlsCfg)
+			if err != nil {
+				panic(err)
+			}
+		}
+
 		s.https = newGraceful(s)
 		s.https.SetKeepAlivesEnabled(false)
-		s.https.ShutdownInitiated = func() { s.stopping = true; kpr.timer.Stop() }
+		s.https.ShutdownInitiated = func() {
+			s.stopping = true
+			kpr.timer.Stop()
+			if tsr != nil {
+				tsr.Stop()
+			}
+		}
 
 		// Create TLS listener.
 		httpsListener := tls.NewListener(mux.Match(MatchTLS()), tlsCfg)

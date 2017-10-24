@@ -97,6 +97,7 @@ type HTTPConfig struct {
 	ListenLimit    int      `json:"httpListenLimit"`
 	TLSCertPath    string   `json:"tlsCertPath"`
 	TLSKeyPath     string   `json:"tlsKeyPath"`
+	TLSSeedsPath   string   `json:"tlsSeedsPath"`
 }
 
 // UDPConfig is the configuration for the UDP protocol.
