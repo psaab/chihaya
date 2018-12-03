@@ -21,7 +21,7 @@ import (
 type Tracker struct {
 	Config *config.Config
 
-	jwkSet jwkSet
+	jwkSet string
 
 	shuttingDown chan struct{}
 	shutdownWG   sync.WaitGroup
@@ -45,12 +45,6 @@ func New(cfg *config.Config) (*Tracker, error) {
 		time.Duration(float64(cfg.MinAnnounce.Duration)*cfg.ReapRatio),
 		cfg.ReapInterval.Duration,
 	)
-
-	if tkr.Config.JWKSetURI != "" {
-		glog.Info("Starting JWK Set update goroutine")
-		tkr.shutdownWG.Add(1)
-		go tkr.updateJWKSetForever()
-	}
 
 	if cfg.ClientWhitelistEnabled {
 		tkr.LoadApprovedClients(cfg.ClientWhitelist)
