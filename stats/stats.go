@@ -9,7 +9,8 @@ package stats
 import (
 	"time"
 
-	"github.com/psaab/flatjson"
+	"encoding/json"
+
 	"github.com/pushrax/faststats"
 
 	"github.com/psaab/chihaya/config"
@@ -102,8 +103,6 @@ type Stats struct {
 	ipv6PeerEvents     chan int
 	responseTimeEvents chan time.Duration
 	recordMemStats     <-chan time.Time
-
-	flattened flatjson.Map
 }
 
 func New(cfg config.StatsConfig) *Stats {
@@ -129,13 +128,18 @@ func New(cfg config.StatsConfig) *Stats {
 		s.recordMemStats = time.NewTicker(cfg.MemUpdateInterval.Duration).C
 	}
 
-	s.flattened = flatjson.Flatten(s)
 	go s.handleEvents()
 	return s
 }
 
-func (s *Stats) Flattened() flatjson.Map {
-	return s.flattened
+func (s *Stats) Flattened() map[string]interface{} {
+	data, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	nested := map[string]interface{}{}
+	_ = json.Unmarshal(data, &nested)
+	return flatten(nested)
 }
 
 func (s *Stats) Close() {
@@ -299,4 +303,22 @@ func RecordTiming(event int, duration time.Duration) {
 	if DefaultStats != nil {
 		DefaultStats.RecordTiming(event, duration)
 	}
+}
+
+// flatten turns nested json objects into a flattened object with '.' seps
+// in the keys to denote nesting
+func flatten(m map[string]interface{}) map[string]interface{} {
+	o := make(map[string]interface{})
+	for k, v := range m {
+		switch child := v.(type) {
+		case map[string]interface{}:
+			nm := flatten(child)
+			for nk, nv := range nm {
+				o[k+"."+nk] = nv
+			}
+		default:
+			o[k] = v
+		}
+	}
+	return o
 }
