@@ -197,8 +197,9 @@ func (s *Storage) PurgeInactiveTorrent(infohash string) error {
 	return nil
 }
 
-func (s *Storage) PurgeInactivePeers(purgeEmptyTorrents bool, before time.Time) error {
+func (s *Storage) PurgeInactivePeers(purgeEmptyTorrents bool, before time.Time) (int, int, error) {
 	unixtime := before.Unix()
+	purged, total := 0, 0
 
 	// Build a list of keys to process.
 	index := 0
@@ -232,8 +233,12 @@ func (s *Storage) PurgeInactivePeers(purgeEmptyTorrents bool, before time.Time) 
 			continue
 		}
 
-		torrent.Seeders.Purge(unixtime)
-		torrent.Leechers.Purge(unixtime)
+		sp, st := torrent.Seeders.Purge(unixtime)
+		total += st
+		purged += sp
+		lp, lt := torrent.Leechers.Purge(unixtime)
+		total += lt
+		purged += lp
 
 		peers := torrent.PeerCount()
 		shard.Unlock()
@@ -244,7 +249,7 @@ func (s *Storage) PurgeInactivePeers(purgeEmptyTorrents bool, before time.Time) 
 		}
 	}
 
-	return nil
+	return purged, total, nil
 }
 
 func (s *Storage) ClientApproved(peerID string) error {

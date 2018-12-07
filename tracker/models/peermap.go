@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	//"github.com/golang/glog"
+
 	"github.com/psaab/chihaya/config"
 	"github.com/psaab/chihaya/stats"
 )
@@ -125,15 +127,19 @@ func (pm *PeerMap) Len() int {
 
 // Purge iterates over all of the peers within a PeerMap and deletes them if
 // they are older than the provided time.
-func (pm *PeerMap) Purge(unixtime int64) {
+func (pm *PeerMap) Purge(unixtime int64) (int, int) {
+	purged, total := 0, 0
 	pm.Lock()
 	defer pm.Unlock()
 
 	for _, subnetmap := range pm.Peers {
 		for key, peer := range subnetmap {
+			//glog.V(0).Infof("IP: %s LA: %d U: %d D: %d LT: %s", peer.IP.String(), peer.LastAnnounce, unixtime, unixtime-peer.LastAnnounce, peer.LastAnnounce <= unixtime)
+			total++
 			if peer.LastAnnounce <= unixtime {
 				atomic.AddInt32(&(pm.Size), -1)
 				delete(subnetmap, key)
+				purged++
 				if pm.Seeders {
 					stats.RecordPeerEvent(stats.ReapedSeed, peer.HasIPv6())
 				} else {
@@ -142,6 +148,7 @@ func (pm *PeerMap) Purge(unixtime int64) {
 			}
 		}
 	}
+	return purged, total
 }
 
 // AppendPeers adds peers to given IPv4 or IPv6 lists.

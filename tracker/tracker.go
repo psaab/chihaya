@@ -90,9 +90,10 @@ func (tkr *Tracker) purgeInactivePeers(purgeEmptyTorrents bool, threshold, inter
 
 		case <-time.NewTicker(interval).C:
 			before := time.Now().Add(-threshold)
-			glog.V(0).Infof("Purging peers with no announces since %s", before)
+			glog.V(0).Infof("Purging peers with no announces since %d", before.Unix())
 
-			err := tkr.PurgeInactivePeers(purgeEmptyTorrents, before)
+			purged, total, err := tkr.PurgeInactivePeers(purgeEmptyTorrents, before)
+			glog.V(0).Infof("Purged %d/%d since %d", purged, total, before.Unix())
 			if err != nil {
 				glog.Errorf("Error purging torrents: %s", err)
 			}
