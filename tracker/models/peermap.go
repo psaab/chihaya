@@ -117,6 +117,9 @@ func (pm *PeerMap) Delete(pk PeerKey) {
 	if exists {
 		atomic.AddInt32(&(pm.Size), -1)
 		delete(pm.Peers[maskedIP], pk)
+		if len(pm.Peers[maskedIP]) == 0 {
+			delete(pm.Peers, maskedIP)
+		}
 	}
 }
 
@@ -132,7 +135,7 @@ func (pm *PeerMap) Purge(unixtime int64) (int, int) {
 	pm.Lock()
 	defer pm.Unlock()
 
-	for _, subnetmap := range pm.Peers {
+	for ix, subnetmap := range pm.Peers {
 		for key, peer := range subnetmap {
 			//glog.V(0).Infof("IP: %s LA: %d U: %d D: %d LT: %s", peer.IP.String(), peer.LastAnnounce, unixtime, unixtime-peer.LastAnnounce, peer.LastAnnounce <= unixtime)
 			total++
@@ -146,6 +149,10 @@ func (pm *PeerMap) Purge(unixtime int64) (int, int) {
 					stats.RecordPeerEvent(stats.ReapedLeech, peer.HasIPv6())
 				}
 			}
+		}
+		if len(pm.Peers[ix]) == 0 {
+			//glog.V(0).Infof("Zero hash %s", ix)
+			delete(pm.Peers, ix)
 		}
 	}
 	return purged, total
