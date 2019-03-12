@@ -82,6 +82,7 @@ func newRouter(s *Server) *httprouter.Router {
 	r := httprouter.New()
 
 	r.GET("/announce", makeHandler(s.serveAnnounce))
+	r.GET("/check", makeHandler(s.serveCheck))
 	r.GET("/scrape", makeHandler(s.serveScrape))
 
 	return r
