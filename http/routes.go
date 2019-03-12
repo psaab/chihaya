@@ -35,6 +35,12 @@ func (s *Server) serveAnnounce(w http.ResponseWriter, r *http.Request, p httprou
 	return handleTorrentError(s.tracker.HandleAnnounce(ann, writer), writer)
 }
 
+func (s *Server) serveCheck(w http.ResponseWriter, r *http.Request, p httprouter.Params) (int, error) {
+	writer := &Writer{w}
+	_, err := w.Write([]byte("STILL-ALIVE"))
+	return handleTorrentError(err, writer)
+}
+
 func (s *Server) serveScrape(w http.ResponseWriter, r *http.Request, p httprouter.Params) (int, error) {
 	writer := &Writer{w}
 	scrape, err := s.newScrape(r, p)
